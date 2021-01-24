@@ -10,4 +10,5 @@ A simulation for our mechanical toy game to demo
 ```
 ./compile_and_run.bat
 ```
-- And then run a.exe generated in the same folder
+- And then run simulate.exe generated in the same folder
+- The define-free for different version of implementation is inside the bottom of simulate.s file 

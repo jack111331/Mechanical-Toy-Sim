@@ -1,1 +1,1 @@
-g++ -std=c++11 simulate.cpp
+g++ -save-temps=obj -o simulate.exe -std=c++11 simulate.cpp
