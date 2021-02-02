@@ -6,7 +6,7 @@ A simulation for our mechanical toy game to demo
 ##### Prerequisite
 - Ensure you have MinGW installed
 ##### Step
-- Simple build script, just run
+- Simple build script, just == start your command line interface with administrator permission == and run
 ```
 ./compile_and_run.bat
 ```
