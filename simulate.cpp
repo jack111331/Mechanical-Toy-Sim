@@ -15,6 +15,7 @@
 #endif
 
 #define DEBUG_FLAG
+#define TOGGLE_SOLUTION
 
 // Colorful output define
 #define WHITE_COLOR "\033[97m"
@@ -40,7 +41,7 @@
 #define TIME_TRIGGER_EVENT
 #ifdef TIME_TRIGGER_EVENT
   // unit (second)
-  #define TIME_TRIGGER_INTERVAL 30
+  #define TIME_TRIGGER_INTERVAL 120
 #endif
 // #define CHECKPOINT_TRIGGER_EVENT
 // #ifdef CHECKPOINT_TRIGGER_EVENT
@@ -149,6 +150,7 @@ typedef struct GraphProperty {
         WHITE,
         RED,
         GREEN,
+        BLUE,
         DEFAULT
     };
 
@@ -165,6 +167,8 @@ typedef struct GraphProperty {
             printf(RED_COLOR);
         } else if (color == GraphColor::GREEN) {
             printf(GREEN_COLOR);
+        } else if (color == GraphColor::BLUE) {
+            printf(BLUE_COLOR);
         } else if (color == GraphColor::DEFAULT) {
             printf(DEFAULT_COLOR);
         }
@@ -705,6 +709,11 @@ GraphProperty drawOrderedRailAt(const GameStatus *game, int railId, int trackPos
 #ifdef INTERLEAVED_BAR_LAYOUT
 GraphProperty drawInterleavedTrackAt(const GameStatus *game, int trackId, int trackPos) {
     // With color ver.
+    #ifdef TOGGLE_SOLUTION
+    if (game->m_adviceAnswerTrackPath[trackPos] == trackId) {
+        return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::BLUE);
+    } else
+    #endif
     #ifdef CHECKPOINT_TRIGGER_EVENT
     if (game->m_trackStatusList[trackId].m_triggerCheckpoint & MASK_AT(trackPos)) {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::RED);
@@ -783,6 +792,12 @@ int main() {
     // Initialize
     GameStatus *game = generateGame();
     InputStatus *inputStatus = new InputStatus();
+    updateGameInfo(game);
+    while(game->m_isComplete) {
+        delete game;
+        game = generateGame();
+    }
+
 #ifdef DEBUG_FLAG
     printf("Initialized\n");
 #endif
@@ -881,11 +896,13 @@ int main() {
                 printf("\n\nCurrent input rail: %d\n", currentInputRail);
                 printf("\nPhysical offsets are (%f, %f, %f, %f)\n", inputStatus->m_physicalOffset[0], inputStatus->m_physicalOffset[1], inputStatus->m_physicalOffset[2], inputStatus->m_physicalOffset[3]);
                 printf("\nLogical rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_offset, game->m_railStatusList[1].m_offset, game->m_railStatusList[2].m_offset, game->m_railStatusList[3].m_offset);
+                printf("\nAdvice rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_adviceCompleteOffset, game->m_railStatusList[1].m_adviceCompleteOffset, game->m_railStatusList[2].m_adviceCompleteOffset, game->m_railStatusList[3].m_adviceCompleteOffset);
 #endif
                 dirtyMutex.lock();
                 dirtyFlag = false;
                 dirtyMutex.unlock();
             }
         }
+        std::cout << "Game Over" << std::endl;
     }).join();
 }
