@@ -6,6 +6,7 @@
 #include <thread>
 #include <mutex>
 #include <ctime>
+#include <bitset>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -36,15 +37,15 @@
 #define CHECKPOINT_GENERATE_PROBABILITY 0.3f
 
 // Event System
-// #define TIME_TRIGGER_EVENT
-// #ifdef TIME_TRIGGER_EVENT
-//   // unit (second)
-//   #define TIME_TRIGGER_INTERVAL 30
-// #endif
-#define CHECKPOINT_TRIGGER_EVENT
-#ifdef CHECKPOINT_TRIGGER_EVENT
-  #define TRIGGER_CHECKPOINT_PROBABILITY 0.3f
+#define TIME_TRIGGER_EVENT
+#ifdef TIME_TRIGGER_EVENT
+  // unit (second)
+  #define TIME_TRIGGER_INTERVAL 30
 #endif
+// #define CHECKPOINT_TRIGGER_EVENT
+// #ifdef CHECKPOINT_TRIGGER_EVENT
+//   #define TRIGGER_CHECKPOINT_PROBABILITY 0.1f
+// #endif
 
 
 // Rail bar layout
@@ -192,7 +193,7 @@ static float seed = time(nullptr);
 
 float randomFloat () {
     seed -= rand();
-    return modf(sin(seed * 12.9898) * 43758.5453, nullptr);
+    return fabs(modf(sin(seed * 12.9898) * 43758.5453, nullptr));
 }
 
 float clamp (float value, float min, float max) {
@@ -274,12 +275,14 @@ bool isAdviceOffsetReachEnd (const GameStatus *game) {
         tempRailBar[i] = (game->m_railStatusList[i].m_activeBar << game->m_railStatusList[i].m_adviceCompleteOffset);
     }
     uint32_t globalTrackTestBit;
+    bool initialTest = true;
     int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side(which is don't happen)
     while (1) {
         if (isRailInBoundary(RIGHT_RAIL(currentTrack))) {
-            tempRailBar[RIGHT_RAIL(currentTrack)] = MASK_OUT_ALL_LOWER_BIT(tempRailBar[RIGHT_RAIL(currentTrack)], globalTrackTestBit);
+            tempRailBar[RIGHT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[RIGHT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[RIGHT_RAIL(currentTrack)];
+
             if (isRailInBoundary(LEFT_RAIL(currentTrack))) {
-                tempRailBar[LEFT_RAIL(currentTrack)] = MASK_OUT_ALL_LOWER_BIT(tempRailBar[LEFT_RAIL(currentTrack)], globalTrackTestBit);
+                tempRailBar[LEFT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[LEFT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[LEFT_RAIL(currentTrack)];
                 if (!tempRailBar[RIGHT_RAIL(currentTrack)] && !tempRailBar[LEFT_RAIL(currentTrack)]) {
                     break;
                 } else if (tempRailBar[RIGHT_RAIL(currentTrack)] && !tempRailBar[LEFT_RAIL(currentTrack)]) {
@@ -308,7 +311,7 @@ bool isAdviceOffsetReachEnd (const GameStatus *game) {
                     }
                 }
             } else {
-                tempRailBar[RIGHT_RAIL(currentTrack)] = MASK_OUT_ALL_LOWER_BIT(tempRailBar[RIGHT_RAIL(currentTrack)], globalTrackTestBit);
+                tempRailBar[RIGHT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[RIGHT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[RIGHT_RAIL(currentTrack)];
                 if (!tempRailBar[RIGHT_RAIL(currentTrack)]) {
                     break;
                 }
@@ -317,7 +320,7 @@ bool isAdviceOffsetReachEnd (const GameStatus *game) {
             }
         } else {
             if (isRailInBoundary(LEFT_RAIL(currentTrack))) {
-                tempRailBar[LEFT_RAIL(currentTrack)] = MASK_OUT_ALL_LOWER_BIT(tempRailBar[LEFT_RAIL(currentTrack)], globalTrackTestBit);
+                tempRailBar[LEFT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[LEFT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[LEFT_RAIL(currentTrack)];
                 if (!tempRailBar[LEFT_RAIL(currentTrack)]) {
                     break;
                 }
@@ -325,6 +328,7 @@ bool isAdviceOffsetReachEnd (const GameStatus *game) {
                 switchToSide = -1;
             }
         }
+        initialTest = false;
         currentTrack += switchToSide;
     }
     return currentTrack == game->m_endTrack;
@@ -411,10 +415,9 @@ void useAdmissibleAnswerToTagCheckpoint(GameStatus *game) {
         // switch current test track to left or right side or don't switch
         currentTrack += switchToSide;
         globalTrackTestPos++;
-
         // Generate checkpoint
         if (globalTrackTestPos % checkpointSpacing == 0) {
-            game->m_trackStatusList[currentTrack].m_checkpoint = game->m_trackStatusList[currentTrack].m_checkpoint | MASK_AT(globalTrackTestPos);
+            game->m_trackStatusList[currentTrack].m_checkpoint = (game->m_trackStatusList[currentTrack].m_checkpoint | MASK_AT(globalTrackTestPos));
         }
     }
 }
@@ -446,6 +449,7 @@ bool isAnswerExist () {
 TrackStatus *generateCheckpoint (GameStatus *game) {
     // DYNAMIC: Declare rail status memory space and initialize it
     TrackStatus *trackList = new TrackStatus[TRACK_AMOUNT]();
+    game->m_trackStatusList = trackList;
     updateCheckpoint(trackList, game);
     // TODO need sanity check to ensure there is always at least one answer exist in MULTIPLE_SET_CHECKPOINT_GENERATION situation
 
@@ -468,6 +472,7 @@ void updateTriggerCheckpoint (GameStatus *game, float triggerCheckpointGenProb) 
 GameStatus *generateGame() {
     GameStatus *game = new GameStatus();
     game->m_startTrack = floor(randomFloat() * SLIDING_RAIL_AMOUNT);
+    std::cout << "Game start track is " << game->m_startTrack << std::endl;
     game->m_endTrack = floor(randomFloat() * SLIDING_RAIL_AMOUNT);
     game->m_railStatusList = generateGhostLegGraph();
     game->m_trackStatusList = generateCheckpoint(game);
@@ -848,9 +853,10 @@ int main() {
             usleep(500000);
 #endif
             currentTime = getCurrentTimeInSecond();
-            dirtyMutex.lock();
-            dirtyFlag = true;
-            dirtyMutex.unlock();
+            // Toggle time update
+            // dirtyMutex.lock();
+            // dirtyFlag = true;
+            // dirtyMutex.unlock();
             // printf("Update time\n");
         }
     }).detach();
