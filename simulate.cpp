@@ -22,6 +22,7 @@
 #define RED_COLOR "\033[31m"
 #define GREEN_COLOR "\033[32m"
 #define BLUE_COLOR "\033[34m"
+#define YELLOW_COLOR "\033[33m"
 #define DEFAULT_COLOR "\033[0m"
 
 
@@ -30,6 +31,7 @@
 #define INFINITY_COHERENCE 1e6
 #define MAXIMUM_BAR 16
 #define MAXIMUM_TRACK_POS 2*MAXIMUM_BAR
+#define MAXIMUM_INTERLEAVE_TRACK_POS 2*MAXIMUM_TRACK_POS
 #define SLIDING_RAIL_AMOUNT 4
 #define TRACK_AMOUNT 5
 #define MAXIMUM_PHYSICAL_OFFSET_ON_RAIL 10.0f
@@ -117,7 +119,7 @@ typedef struct GameStatus {
 
     size_t m_endTrack;
 
-    int m_adviceAnswerTrackPath[32];
+    int m_adviceAnswerTrackPath[64];
 
     int m_achievedCheckpoint;
 
@@ -128,6 +130,10 @@ typedef struct GameStatus {
     bool m_isComplete;
 
     float m_progressBar;
+
+    // For debug purpose
+    int m_currentEndTrack;
+    int m_currentTrackHistory[64];
 
 } GameStatus;
 
@@ -151,6 +157,7 @@ typedef struct GraphProperty {
         RED,
         GREEN,
         BLUE,
+        YELLOW,
         DEFAULT
     };
 
@@ -169,6 +176,8 @@ typedef struct GraphProperty {
             printf(GREEN_COLOR);
         } else if (color == GraphColor::BLUE) {
             printf(BLUE_COLOR);
+        } else if (color == GraphColor::YELLOW) {
+            printf(YELLOW_COLOR);
         } else if (color == GraphColor::DEFAULT) {
             printf(DEFAULT_COLOR);
         }
@@ -307,7 +316,7 @@ bool isAdviceOffsetReachEnd (const GameStatus *game) {
                         switchToSide = 1;
     #endif
     #ifdef INTERLEAVED_BAR_LAYOUT
-                        switchToSide = currentTrack & 1 ? 1 : -1;
+                        switchToSide = (currentTrack & 1) ? 1 : -1;
     #endif
                     } else {
                         globalTrackTestBit = leftRailTestBit;
@@ -351,7 +360,7 @@ bool updateAdviceAnswerTrackPath (GameStatus *game) {
 #endif
 
 #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = currentTrack & 1?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = currentTrack & 1?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
+        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
 #endif
 
         // Test if globalTrackTestPos is in first test rail's realm
@@ -398,7 +407,7 @@ void useAdmissibleAnswerToTagCheckpoint(GameStatus *game) {
 #endif
 
 #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = currentTrack & 1?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = currentTrack & 1?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
+        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
 #endif
 
         // Test if globalTrackTestPos is in first test rail's realm
@@ -476,7 +485,6 @@ void updateTriggerCheckpoint (GameStatus *game, float triggerCheckpointGenProb) 
 GameStatus *generateGame() {
     GameStatus *game = new GameStatus();
     game->m_startTrack = floor(randomFloat() * SLIDING_RAIL_AMOUNT);
-    std::cout << "Game start track is " << game->m_startTrack << std::endl;
     game->m_endTrack = floor(randomFloat() * SLIDING_RAIL_AMOUNT);
     game->m_railStatusList = generateGhostLegGraph();
     game->m_trackStatusList = generateCheckpoint(game);
@@ -514,7 +522,7 @@ float progressBarUpdate(GameStatus *game) {
   #endif
 
   #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = currentTrack & 1?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = currentTrack & 1?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
+        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
   #endif
 
         // Test if globalTrackTestPos is in first test rail's realm
@@ -566,7 +574,7 @@ float progressBarUpdate(GameStatus *game) {
     #endif
 
     #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = currentTrack & 1?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = currentTrack & 1?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
+        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
     #endif
 
         // Test if globalTrackTestPos is in first test rail's realm
@@ -614,6 +622,8 @@ float progressBarUpdate(GameStatus *game) {
 }
 
 void updateGameInfo(GameStatus *game) {
+    // issue bug: the jump will probably ignore rail bar beside
+    // Should use 64 position to accurately present its behavior
     int globalTrackTestPos = 0;
     int currentTrack = game->m_startTrack; // 0 ~ TRACK_AMOUNT-1
     game->m_achievedCheckpoint = 0;
@@ -621,6 +631,9 @@ void updateGameInfo(GameStatus *game) {
     game->m_isTriggerCheckpoint = false;
 #endif
     while (globalTrackTestPos < MAXIMUM_TRACK_POS) {
+        // For debug purpose
+        game->m_currentTrackHistory[globalTrackTestPos] = currentTrack;
+
         game->m_achievedCheckpoint += (game->m_trackStatusList[currentTrack].m_checkpoint & MASK_AT(globalTrackTestPos)) ? 1 : 0;
 
 #ifdef CHECKPOINT_TRIGGER_EVENT
@@ -634,7 +647,7 @@ void updateGameInfo(GameStatus *game) {
 #endif
 
 #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = currentTrack & 1?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = currentTrack & 1?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
+        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
 #endif
 
         // Test if globalTrackTestPos is in first test rail's realm
@@ -653,10 +666,13 @@ void updateGameInfo(GameStatus *game) {
             }
         }
         // switch current test track to left or right side or don't switch
+        if (!switchToSide || (currentTrack & 1) == 0) {
+            globalTrackTestPos++;
+        }
         currentTrack += switchToSide;
-        globalTrackTestPos++;
     }
-    game->m_isComplete = game->m_endTrack == currentTrack;
+    game->m_currentEndTrack = currentTrack;
+    game->m_isComplete = (game->m_endTrack == currentTrack) && (game->m_achievedCheckpoint >= CHECKPOINT_AMOUNT);
 
     progressBarUpdate(game);
 }
@@ -710,16 +726,20 @@ GraphProperty drawOrderedRailAt(const GameStatus *game, int railId, int trackPos
 GraphProperty drawInterleavedTrackAt(const GameStatus *game, int trackId, int trackPos) {
     // With color ver.
     #ifdef TOGGLE_SOLUTION
-    if (game->m_adviceAnswerTrackPath[trackPos] == trackId) {
-        return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::BLUE);
+    if (game->m_adviceAnswerTrackPath[trackPos/2] == trackId) {
+        if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos/2)) {
+            return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::YELLOW);
+        } else {
+            return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::BLUE);
+        }
     } else
     #endif
     #ifdef CHECKPOINT_TRIGGER_EVENT
-    if (game->m_trackStatusList[trackId].m_triggerCheckpoint & MASK_AT(trackPos)) {
+    if (game->m_trackStatusList[trackId].m_triggerCheckpoint & MASK_AT(trackPos/2)) {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::RED);
     } else
     #endif
-    if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos)) {
+    if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos/2)) {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::GREEN);
     } else {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::WHITE);
@@ -733,10 +753,10 @@ GraphProperty drawInterleavedRailAt(const GameStatus *game, int railId, int trac
     if (((railId&1) ^ (trackPos&1)) == 0) {
         return GraphProperty(GraphProperty::GraphIcon::SPACE, GraphProperty::GraphColor::WHITE);
     }
-
     int barPhysicalPos = (trackPos - 2 * game->m_railStatusList[railId].m_offset);
-    int barLogicalPos = barPhysicalPos / 2;
-    if (barLogicalPos >= 0) {
+    if (barPhysicalPos >= 0) {
+        // prevent barPhysicalPos=-1 from divide it with 2 and get zero
+        int barLogicalPos = barPhysicalPos / 2;
         if (game->m_railStatusList[railId].m_activeBar & MASK_AT(barLogicalPos)) {
             return GraphProperty(GraphProperty::GraphIcon::DASH, GraphProperty::GraphColor::WHITE);
         } else {
@@ -896,6 +916,15 @@ int main() {
                 printf("\n\nCurrent input rail: %d\n", currentInputRail);
                 printf("\nPhysical offsets are (%f, %f, %f, %f)\n", inputStatus->m_physicalOffset[0], inputStatus->m_physicalOffset[1], inputStatus->m_physicalOffset[2], inputStatus->m_physicalOffset[3]);
                 printf("\nLogical rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_offset, game->m_railStatusList[1].m_offset, game->m_railStatusList[2].m_offset, game->m_railStatusList[3].m_offset);
+                for (int i = 0; i < SLIDING_RAIL_AMOUNT; ++i) {
+                    std::cout << std::bitset<32>((uint32_t)(game->m_railStatusList[i].m_activeBar) << game->m_railStatusList[i].m_offset) << std::endl;
+                }
+                for (int i = 0; i < MAXIMUM_TRACK_POS; ++i) {
+                    std::cout << game->m_currentTrackHistory[i] << " ";
+                }
+                std::cout << std::endl;
+
+                printf("\n\nGame start track is %d, end track is %d, current setting's end track is %d\n", game->m_startTrack, game->m_endTrack, game->m_currentEndTrack);
                 printf("\nAdvice rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_adviceCompleteOffset, game->m_railStatusList[1].m_adviceCompleteOffset, game->m_railStatusList[2].m_adviceCompleteOffset, game->m_railStatusList[3].m_adviceCompleteOffset);
 #endif
                 dirtyMutex.lock();
