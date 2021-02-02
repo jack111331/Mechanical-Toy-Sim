@@ -52,7 +52,7 @@
 
 
 // Rail bar layout
-// #define ORDERED_BAR_LAYOUT // proposed by Edge
+// #define ORDERED_BAR_LAYOUT // proposed by Edge, Deprecated
 #define INTERLEAVED_BAR_LAYOUT // proposed by Jia-wei
 
 // Checkpoint generation
@@ -80,7 +80,7 @@
 
 // Functional macro
 // Generate 0000100000000000, 0100000000000000 and so on
-#define MASK_AT(i) (1 << (i))
+#define MASK_AT(i) (1ULL << (i))
 #define LOWEST_BIT(n) ((n)&(-n))
 #define IS_RIGHT_FIRST(n) (((n)&0xaaaaaaaa)?true:false)
 #define ALL_LOWER_BIT(n) ((n) | ((n)-1))
@@ -100,10 +100,10 @@ typedef struct RailStatus {
 } RailStatus;
 
 typedef struct TrackStatus {
-    uint32_t m_checkpoint;
+    uint64_t m_checkpoint;
 
 #ifdef CHECKPOINT_TRIGGER_EVENT
-    uint32_t m_triggerCheckpoint;
+    uint64_t m_triggerCheckpoint;
 #endif
 
     TrackStatus() : m_checkpoint(0) { }
@@ -184,13 +184,11 @@ typedef struct GraphProperty {
     }
 
     void print (bool isTranspose) {
+        printColor(m_color);
         if(m_content == GraphIcon::SPACE) {
-            printColor(m_color);
             printf(" ");
-            printColor(GraphColor::DEFAULT);
             return;
         }
-        printColor(m_color);
         if(m_content == GraphIcon::BAR) {
             printf(isTranspose?"-":"|");
         } else {
@@ -282,100 +280,61 @@ RailStatus *generateGhostLegGraph () {
 
 #ifdef ONE_SET_CHECKPOINT_GENERATION
 bool isAdviceOffsetReachEnd (const GameStatus *game) {
-    int currentTrack = game->m_startTrack;
-    uint32_t tempRailBar[SLIDING_RAIL_AMOUNT];
-    for (int i = 0; i < SLIDING_RAIL_AMOUNT; ++i) {
-        tempRailBar[i] = (game->m_railStatusList[i].m_activeBar << game->m_railStatusList[i].m_adviceCompleteOffset);
-    }
-    uint32_t globalTrackTestBit;
-    bool initialTest = true;
-    int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side(which is don't happen)
-    while (1) {
-        if (isRailInBoundary(RIGHT_RAIL(currentTrack))) {
-            tempRailBar[RIGHT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[RIGHT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[RIGHT_RAIL(currentTrack)];
+    int globalTrackTestPos = 0;
+    int currentTrack = game->m_startTrack; // 0 ~ TRACK_AMOUNT-1
+    while (globalTrackTestPos < MAXIMUM_INTERLEAVE_TRACK_POS) {
+        int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side
 
-            if (isRailInBoundary(LEFT_RAIL(currentTrack))) {
-                tempRailBar[LEFT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[LEFT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[LEFT_RAIL(currentTrack)];
-                if (!tempRailBar[RIGHT_RAIL(currentTrack)] && !tempRailBar[LEFT_RAIL(currentTrack)]) {
-                    break;
-                } else if (tempRailBar[RIGHT_RAIL(currentTrack)] && !tempRailBar[LEFT_RAIL(currentTrack)]) {
-                    globalTrackTestBit = LOWEST_BIT(tempRailBar[RIGHT_RAIL(currentTrack)]);
+        if (isRailInBoundary(RIGHT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset && globalTrackTestPos/2 < game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset + MAXIMUM_BAR) {
+            // Mapping global test pos to current rail's right track local test pos
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset;
+            if (game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 1) {
                     switchToSide = 1;
-                } else if (!tempRailBar[RIGHT_RAIL(currentTrack)] && tempRailBar[LEFT_RAIL(currentTrack)]) {
-                    globalTrackTestBit = LOWEST_BIT(tempRailBar[LEFT_RAIL(currentTrack)]);
-                    switchToSide = -1;
-                } else {
-                    uint32_t rightRailTestBit = LOWEST_BIT(tempRailBar[RIGHT_RAIL(currentTrack)]);
-                    uint32_t leftRailTestBit = LOWEST_BIT(tempRailBar[LEFT_RAIL(currentTrack)]);
-                    if (rightRailTestBit < leftRailTestBit) {
-                        globalTrackTestBit = rightRailTestBit;
-                        switchToSide = 1;
-                    } else if (rightRailTestBit == leftRailTestBit) {
-                        globalTrackTestBit = rightRailTestBit;
-    #ifdef ORDERED_BAR_LAYOUT
-                        switchToSide = 1;
-    #endif
-    #ifdef INTERLEAVED_BAR_LAYOUT
-                        switchToSide = (currentTrack & 1) ? 1 : -1;
-    #endif
-                    } else {
-                        globalTrackTestBit = leftRailTestBit;
-                        switchToSide = -1;
-                    }
                 }
-            } else {
-                tempRailBar[RIGHT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[RIGHT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[RIGHT_RAIL(currentTrack)];
-                if (!tempRailBar[RIGHT_RAIL(currentTrack)]) {
-                    break;
-                }
-                globalTrackTestBit = LOWEST_BIT(tempRailBar[RIGHT_RAIL(currentTrack)]);
-                switchToSide = 1;
-            }
-        } else {
-            if (isRailInBoundary(LEFT_RAIL(currentTrack))) {
-                tempRailBar[LEFT_RAIL(currentTrack)] = !initialTest ? MASK_OUT_ALL_LOWER_BIT(tempRailBar[LEFT_RAIL(currentTrack)], globalTrackTestBit) : tempRailBar[LEFT_RAIL(currentTrack)];
-                if (!tempRailBar[LEFT_RAIL(currentTrack)]) {
-                    break;
-                }
-                globalTrackTestBit = LOWEST_BIT(tempRailBar[LEFT_RAIL(currentTrack)]);
-                switchToSide = -1;
             }
         }
-        initialTest = false;
+        if (isRailInBoundary(LEFT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset && globalTrackTestPos/2 < game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset + MAXIMUM_BAR) {
+            // Mapping global test pos to current rail's left track local test pos
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset;
+            if (game->m_railStatusList[LEFT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack ^ globalTrackTestPos) & 1) == 0) {
+                    switchToSide = -1;
+                }
+            }
+        }
+        // switch current test track to left or right side or don't switch
         currentTrack += switchToSide;
+        globalTrackTestPos++;
     }
+
     return currentTrack == game->m_endTrack;
 }
 
-bool updateAdviceAnswerTrackPath (GameStatus *game) {
+void updateAdviceAnswerTrackPath (GameStatus *game) {
     int globalTrackTestPos = 0;
     int currentTrack = game->m_startTrack; // 0 ~ TRACK_AMOUNT-1
-    while (globalTrackTestPos < MAXIMUM_TRACK_POS) {
+    while (globalTrackTestPos < MAXIMUM_INTERLEAVE_TRACK_POS) {
         // update advice track
         game->m_adviceAnswerTrackPath[globalTrackTestPos] = currentTrack;
         int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side
 
-#ifdef ORDERED_BAR_LAYOUT
-        int firstTestRail = RIGHT_RAIL(currentTrack), secondTestRail = LEFT_RAIL(currentTrack);
-#endif
-
-#ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
-#endif
-
-        // Test if globalTrackTestPos is in first test rail's realm
-        if (isRailInBoundary(firstTestRail) && globalTrackTestPos >= game->m_railStatusList[firstTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[firstTestRail].m_adviceCompleteOffset + MAXIMUM_BAR) {
+        if (isRailInBoundary(RIGHT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's right track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[firstTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[firstTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = firstTestRail > secondTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset;
+            if (game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 1) {
+                    switchToSide = 1;
+                }
             }
-        // Test if globalTrackTestPos is in second test rail's realm
-        } else if (isRailInBoundary(secondTestRail) && globalTrackTestPos >= game->m_railStatusList[secondTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[secondTestRail].m_adviceCompleteOffset + MAXIMUM_BAR)  {
+        }
+        if (isRailInBoundary(LEFT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's left track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[secondTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[secondTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = secondTestRail > firstTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset;
+            if (game->m_railStatusList[LEFT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 0) {
+                    switchToSide = -1;
+                }
             }
         }
         // switch current test track to left or right side or don't switch
@@ -398,31 +357,26 @@ void useAdmissibleAnswerToTagCheckpoint(GameStatus *game) {
     int globalTrackTestPos = 0;
     int currentTrack = game->m_startTrack; // 0 ~ TRACK_AMOUNT-1
     // checkpointAmount + 1, plus one is to prevent from choosing checkpoint at end point
-    int checkpointSpacing = MAXIMUM_TRACK_POS / (CHECKPOINT_AMOUNT + 1);
-    while (globalTrackTestPos < MAXIMUM_TRACK_POS) {
+    int checkpointSpacing = (MAXIMUM_INTERLEAVE_TRACK_POS - 1) / CHECKPOINT_AMOUNT;
+    while (globalTrackTestPos < MAXIMUM_INTERLEAVE_TRACK_POS) {
         int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side
 
-#ifdef ORDERED_BAR_LAYOUT
-        int firstTestRail = RIGHT_RAIL(currentTrack), secondTestRail = LEFT_RAIL(currentTrack);
-#endif
-
-#ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
-#endif
-
-        // Test if globalTrackTestPos is in first test rail's realm
-        if (isRailInBoundary(firstTestRail) && globalTrackTestPos >= game->m_railStatusList[firstTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[firstTestRail].m_adviceCompleteOffset + MAXIMUM_BAR) {
+        if (isRailInBoundary(RIGHT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset && globalTrackTestPos/2 < game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's right track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[firstTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[firstTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = firstTestRail > secondTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_adviceCompleteOffset;
+            if (game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 1) {
+                    switchToSide = 1;
+                }
             }
-        // Test if globalTrackTestPos is in second test rail's realm
-        } else if (isRailInBoundary(secondTestRail) && globalTrackTestPos >= game->m_railStatusList[secondTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[secondTestRail].m_adviceCompleteOffset + MAXIMUM_BAR)  {
+        }
+        if (isRailInBoundary(LEFT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset && globalTrackTestPos/2 < game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's left track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[secondTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[secondTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = secondTestRail > firstTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[LEFT_RAIL(currentTrack)].m_adviceCompleteOffset;
+            if (game->m_railStatusList[LEFT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 0) {
+                    switchToSide = -1;
+                }
             }
         }
         // switch current test track to left or right side or don't switch
@@ -447,7 +401,7 @@ void updateCheckpoint (TrackStatus *trackList, GameStatus *game) {
 void updateCheckpoint (TrackStatus *trackList, GameStatus *game) {
     for (int i = 0; i < TRACK_AMOUNT; ++i) {
         trackList[i].m_checkpoint = 0;
-        for (int j = 0; j < MAXIMUM_TRACK_POS; ++j) {
+        for (int j = 0; j < MAXIMUM_INTERLEAVE_TRACK_POS; ++j) {
             if (randomFloat() <= CHECKPOINT_GENERATE_PROBABILITY) {
                 trackList[i].m_checkpoint = trackList[i].m_checkpoint | MASK_AT(j);
             }
@@ -473,7 +427,7 @@ TrackStatus *generateCheckpoint (GameStatus *game) {
 void updateTriggerCheckpoint (GameStatus *game, float triggerCheckpointGenProb) {
     for (int i = 0; i < TRACK_AMOUNT; ++i) {
         game->m_trackStatusList[i].m_triggerCheckpoint = 0;
-        for (int j = 0; j < MAXIMUM_TRACK_POS; ++j) {
+        for (int j = 0; j < MAXIMUM_INTERLEAVE_TRACK_POS; ++j) {
             if ((game->m_trackStatusList[i].m_checkpoint & MASK_AT(j)) && randomFloat() <= triggerCheckpointGenProb) {
                 game->m_trackStatusList[i].m_triggerCheckpoint = game->m_trackStatusList[i].m_triggerCheckpoint | MASK_AT(j);
             }
@@ -500,11 +454,11 @@ float progressBarUpdate(GameStatus *game) {
 #ifdef ONE_SET_CHECKPOINT_GENERATION
     int globalTrackTestPos = 0;
     int currentTrack = game->m_startTrack; // 0 ~ TRACK_AMOUNT-1
-    int checkpointSpacing = MAXIMUM_TRACK_POS / (CHECKPOINT_AMOUNT + 1);
+    int checkpointSpacing = (MAXIMUM_INTERLEAVE_TRACK_POS - 1) / CHECKPOINT_AMOUNT;
     int currentAchievedCheckpointTrack;
     int currentAchievedCheckpointPos;
     int latestAchievedCheckpoint = 0;
-    while (globalTrackTestPos < MAXIMUM_TRACK_POS) {
+    while (globalTrackTestPos < MAXIMUM_INTERLEAVE_TRACK_POS) {
         if ((latestAchievedCheckpoint + 1) * checkpointSpacing == globalTrackTestPos) {
             if ((game->m_trackStatusList[currentTrack].m_checkpoint & MASK_AT(globalTrackTestPos))) {
                 currentAchievedCheckpointTrack = currentTrack;
@@ -516,28 +470,22 @@ float progressBarUpdate(GameStatus *game) {
         }
 
         int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side
-
-  #ifdef ORDERED_BAR_LAYOUT
-        int firstTestRail = RIGHT_RAIL(currentTrack), secondTestRail = LEFT_RAIL(currentTrack);
-  #endif
-
-  #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
-  #endif
-
-        // Test if globalTrackTestPos is in first test rail's realm
-        if (isRailInBoundary(firstTestRail) && globalTrackTestPos >= game->m_railStatusList[firstTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[firstTestRail].m_adviceCompleteOffset + MAXIMUM_BAR) {
+        if (isRailInBoundary(RIGHT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's right track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[firstTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[firstTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = firstTestRail > secondTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset;
+            if (game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 1) {
+                    switchToSide = 1;
+                }
             }
-        // Test if globalTrackTestPos is in second test rail's realm
-        } else if (isRailInBoundary(secondTestRail) && globalTrackTestPos >= game->m_railStatusList[secondTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[secondTestRail].m_adviceCompleteOffset + MAXIMUM_BAR)  {
+        }
+        if (isRailInBoundary(LEFT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's left track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[secondTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[secondTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = secondTestRail > firstTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset;
+            if (game->m_railStatusList[LEFT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 0) {
+                    switchToSide = -1;
+                }
             }
         }
         // switch current test track to left or right side or don't switch
@@ -548,7 +496,7 @@ float progressBarUpdate(GameStatus *game) {
     // TODO still thinking about how to get the path distance to next checkpoint 0.0
     if (currentAchievedCheckpointTrack >= checkpointSpacing * CHECKPOINT_AMOUNT) {
         // Achieved last checkpoint and is seeking for the end point
-        int verticalLength = MAXIMUM_TRACK_POS - currentAchievedCheckpointPos;
+        int verticalLength = MAXIMUM_INTERLEAVE_TRACK_POS - currentAchievedCheckpointPos;
         // DISCUSS: Should we amplify the impact of horizontalLength(?
         int horizontalLength = game->m_endTrack - currentAchievedCheckpointTrack;
         game->m_progressBar = sqrt(verticalLength * verticalLength + horizontalLength * horizontalLength);
@@ -562,34 +510,29 @@ float progressBarUpdate(GameStatus *game) {
   #endif
   #ifdef CHECKPOINT_TO_ENDTRACK_DISTANCE
     globalTrackTestPos = latestAchievedCheckpoint * checkpointSpacing;
-    while (globalTrackTestPos < MAXIMUM_TRACK_POS) {
+    while (globalTrackTestPos < MAXIMUM_INTERLEAVE_TRACK_POS) {
         if (currentTrack == game->m_adviceAnswerTrackPath[globalTrackTestPos] || globalTrackTestPos >= (latestAchievedCheckpoint + 1) * checkpointSpacing) {
             break;
         }
 
         int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side
 
-    #ifdef ORDERED_BAR_LAYOUT
-        int firstTestRail = RIGHT_RAIL(currentTrack), secondTestRail = LEFT_RAIL(currentTrack);
-    #endif
-
-    #ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
-    #endif
-
-        // Test if globalTrackTestPos is in first test rail's realm
-        if (isRailInBoundary(firstTestRail) && globalTrackTestPos >= game->m_railStatusList[firstTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[firstTestRail].m_adviceCompleteOffset + MAXIMUM_BAR) {
+        if (isRailInBoundary(RIGHT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's right track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[firstTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[firstTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = firstTestRail > secondTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset;
+            if (game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 1) {
+                    switchToSide = 1;
+                }
             }
-        // Test if globalTrackTestPos is in second test rail's realm
-        } else if (isRailInBoundary(secondTestRail) && globalTrackTestPos >= game->m_railStatusList[secondTestRail].m_adviceCompleteOffset && globalTrackTestPos < game->m_railStatusList[secondTestRail].m_adviceCompleteOffset + MAXIMUM_BAR)  {
+        }
+        if (isRailInBoundary(LEFT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's left track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[secondTestRail].m_adviceCompleteOffset;
-            if (game->m_railStatusList[secondTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = secondTestRail > firstTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset;
+            if (game->m_railStatusList[LEFT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 0) {
+                    switchToSide = -1;
+                }
             }
         }
         // switch current test track to left or right side or don't switch
@@ -599,7 +542,7 @@ float progressBarUpdate(GameStatus *game) {
     if (currentAchievedCheckpointPos >= checkpointSpacing * CHECKPOINT_AMOUNT) {
         // Achieved last checkpoint and is seeking for the end point
         // The tri-operator is for detecting if there is no contact with right end track
-        int toEndTrackLength = MAXIMUM_TRACK_POS - globalTrackTestPos <= 0 ? checkpointSpacing : MAXIMUM_TRACK_POS - globalTrackTestPos;
+        int toEndTrackLength = MAXIMUM_INTERLEAVE_TRACK_POS - globalTrackTestPos <= 0 ? checkpointSpacing : MAXIMUM_INTERLEAVE_TRACK_POS - globalTrackTestPos;
         game->m_progressBar = 1.0f - (static_cast<float>(toEndTrackLength) / static_cast<float>(checkpointSpacing));
     } else {
         // Didn't achieve last checkpoint
@@ -622,7 +565,6 @@ float progressBarUpdate(GameStatus *game) {
 }
 
 void updateGameInfo(GameStatus *game) {
-    // issue bug: the jump will probably ignore rail bar beside
     // Should use 64 position to accurately present its behavior
     int globalTrackTestPos = 0;
     int currentTrack = game->m_startTrack; // 0 ~ TRACK_AMOUNT-1
@@ -630,7 +572,7 @@ void updateGameInfo(GameStatus *game) {
 #ifdef CHECKPOINT_TRIGGER_EVENT
     game->m_isTriggerCheckpoint = false;
 #endif
-    while (globalTrackTestPos < MAXIMUM_TRACK_POS) {
+    while (globalTrackTestPos < MAXIMUM_INTERLEAVE_TRACK_POS) {
         // For debug purpose
         game->m_currentTrackHistory[globalTrackTestPos] = currentTrack;
 
@@ -642,34 +584,27 @@ void updateGameInfo(GameStatus *game) {
 
         int switchToSide = 0; // 1 is right, -1 is left, 0 dont' move to either side
 
-#ifdef ORDERED_BAR_LAYOUT
-        int firstTestRail = RIGHT_RAIL(currentTrack), secondTestRail = LEFT_RAIL(currentTrack);
-#endif
-
-#ifdef INTERLEAVED_BAR_LAYOUT
-        int firstTestRail = (currentTrack & 1)?RIGHT_RAIL(currentTrack):LEFT_RAIL(currentTrack), secondTestRail = (currentTrack & 1)?LEFT_RAIL(currentTrack):RIGHT_RAIL(currentTrack);
-#endif
-
-        // Test if globalTrackTestPos is in first test rail's realm
-        if (isRailInBoundary(firstTestRail) && globalTrackTestPos >= game->m_railStatusList[firstTestRail].m_offset && globalTrackTestPos < game->m_railStatusList[firstTestRail].m_offset + MAXIMUM_BAR) {
+        if (isRailInBoundary(RIGHT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's right track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[firstTestRail].m_offset;
-            if (game->m_railStatusList[firstTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = firstTestRail > secondTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_offset;
+            if (game->m_railStatusList[RIGHT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack & 1) ^ (globalTrackTestPos & 1)) == 1) {
+                    switchToSide = 1;
+                }
             }
-        // Test if globalTrackTestPos is in second test rail's realm
-        } else if (isRailInBoundary(secondTestRail) && globalTrackTestPos >= game->m_railStatusList[secondTestRail].m_offset && globalTrackTestPos < game->m_railStatusList[secondTestRail].m_offset + MAXIMUM_BAR)  {
+        }
+        if (isRailInBoundary(LEFT_RAIL(currentTrack)) && globalTrackTestPos/2 >= game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset && globalTrackTestPos/2 < game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset + MAXIMUM_BAR) {
             // Mapping global test pos to current rail's left track local test pos
-            int localTrackTestPos = globalTrackTestPos - game->m_railStatusList[secondTestRail].m_offset;
-            if (game->m_railStatusList[secondTestRail].m_activeBar & MASK_AT(localTrackTestPos)) {
-                switchToSide = secondTestRail > firstTestRail ? 1 : -1;
+            int localTrackTestPos = globalTrackTestPos/2 - game->m_railStatusList[LEFT_RAIL(currentTrack)].m_offset;
+            if (game->m_railStatusList[LEFT_RAIL(currentTrack)].m_activeBar & MASK_AT(localTrackTestPos)) {
+                if (((currentTrack ^ globalTrackTestPos) & 1) == 0) {
+                    switchToSide = -1;
+                }
             }
         }
         // switch current test track to left or right side or don't switch
-        if (!switchToSide || (currentTrack & 1) == 0) {
-            globalTrackTestPos++;
-        }
         currentTrack += switchToSide;
+        globalTrackTestPos++;
     }
     game->m_currentEndTrack = currentTrack;
     game->m_isComplete = (game->m_endTrack == currentTrack) && (game->m_achievedCheckpoint >= CHECKPOINT_AMOUNT);
@@ -680,7 +615,7 @@ void updateGameInfo(GameStatus *game) {
 void eventDrivenCheckpointUpdate(int currentTime, GameStatus *game) {
 #ifdef TIME_TRIGGER_EVENT
     // NOTICE: Make sure to invoke this routine every second
-    if (currentTime % TIME_TRIGGER_INTERVAL == 0) {
+    if (currentTime != 0 && currentTime % TIME_TRIGGER_INTERVAL == 0) {
         updateCheckpoint(game->m_trackStatusList, game);
     }
 #endif
@@ -693,41 +628,11 @@ void eventDrivenCheckpointUpdate(int currentTime, GameStatus *game) {
 #endif
 }
 
-#ifdef ORDERED_BAR_LAYOUT
-// FIXME
-GraphProperty drawOrderedTrackAt(const GameStatus *game, int trackId, int trackPos) {
-    #ifdef CHECKPOINT_TRIGGER_EVENT
-    if (game->m_trackStatusList[trackId].m_triggerCheckpoint & MASK_AT(trackPos)) {
-        return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::RED);
-    } else
-    #endif
-    if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos)) {
-        return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::GREEN);
-    } else {
-        return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::WHITE);
-    }
-}
-GraphProperty drawOrderedRailAt(const GameStatus *game, int railId, int trackPos) {
-    int barPos = trackPos/2 - game->m_railStatusList[railId].offset;
-    if (railId&1 && trackPos&1) {
-        return GraphProperty(GraphProperty::GraphIcon::SPACE, GraphProperty::GraphColor::DEFAULT);
-    } else if (railId&1 == 0 && trackPos&1 == 0) {
-        return GraphProperty(GraphProperty::GraphIcon::SPACE, GraphProperty::GraphColor::DEFAULT);
-    }
-    if (game->m_railStatusList[railId].m_activeBar & MASK_AT(barPos)) {
-        return GraphProperty(GraphProperty::GraphIcon::DASH, GraphProperty::GraphColor::WHITE);
-    } else {
-        return GraphProperty(GraphProperty::GraphIcon::SPACE, GraphProperty::GraphColor::DEFAULT);
-    }
-}
-#endif
-
-#ifdef INTERLEAVED_BAR_LAYOUT
 GraphProperty drawInterleavedTrackAt(const GameStatus *game, int trackId, int trackPos) {
     // With color ver.
     #ifdef TOGGLE_SOLUTION
-    if (game->m_adviceAnswerTrackPath[trackPos/2] == trackId) {
-        if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos/2)) {
+    if (game->m_adviceAnswerTrackPath[trackPos] == trackId) {
+        if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos)) {
             return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::YELLOW);
         } else {
             return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::BLUE);
@@ -735,11 +640,11 @@ GraphProperty drawInterleavedTrackAt(const GameStatus *game, int trackId, int tr
     } else
     #endif
     #ifdef CHECKPOINT_TRIGGER_EVENT
-    if (game->m_trackStatusList[trackId].m_triggerCheckpoint & MASK_AT(trackPos/2)) {
+    if (game->m_trackStatusList[trackId].m_triggerCheckpoint & MASK_AT(trackPos)) {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::RED);
     } else
     #endif
-    if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos/2)) {
+    if (game->m_trackStatusList[trackId].m_checkpoint & MASK_AT(trackPos)) {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::GREEN);
     } else {
         return GraphProperty(GraphProperty::GraphIcon::BAR, GraphProperty::GraphColor::WHITE);
@@ -766,40 +671,26 @@ GraphProperty drawInterleavedRailAt(const GameStatus *game, int railId, int trac
         return GraphProperty(GraphProperty::GraphIcon::SPACE, GraphProperty::GraphColor::WHITE);
     }
 }
-#endif
 
 void printGraph (const GameStatus *game) {
     GraphProperty graph[SLIDING_RAIL_AMOUNT + TRACK_AMOUNT][2 * MAXIMUM_TRACK_POS];
-#ifdef ORDERED_BAR_LAYOUT
-    // FIXME
-    for (int j = 0; j < 2 * MAXIMUM_TRACK_POS; ++j) {
-        for (int i = 0; i < SLIDING_RAIL_AMOUNT; ++i) {
-            drawOrderedTrackAt(game, i, j);
-            drawOrderedRailAt(game, i, j);
-        }
-        drawInterleavedTrackAt(game, TRACK_AMOUNT-1, j);
-        printf("\n");
-    }
-#endif
-#ifdef INTERLEAVED_BAR_LAYOUT
-    for (int j = 0; j < 2 * MAXIMUM_TRACK_POS; ++j) {
+    for (int j = 0; j < MAXIMUM_INTERLEAVE_TRACK_POS; ++j) {
         for (int i = 0; i < SLIDING_RAIL_AMOUNT; ++i) {
             graph[i * 2][j] = drawInterleavedTrackAt(game, i, j);
             graph[i * 2 + 1][j] = drawInterleavedRailAt(game, i, j);
         }
         graph[SLIDING_RAIL_AMOUNT+TRACK_AMOUNT-1][j] = drawInterleavedTrackAt(game, TRACK_AMOUNT-1, j);
     }
-#endif
 
 #ifdef TRANSPOSE_GUI
     for (int i = 0; i < SLIDING_RAIL_AMOUNT + TRACK_AMOUNT; ++i) {
-        for (int j = 0; j < 2 * MAXIMUM_TRACK_POS; ++j) {
+        for (int j = 0; j < MAXIMUM_INTERLEAVE_TRACK_POS; ++j) {
             graph[i][j].print(true);
         }
         puts("");
     }
 #else
-    for (int j = 0; j < 2 * MAXIMUM_TRACK_POS; ++j) {
+    for (int j = 0; j < MAXIMUM_INTERLEAVE_TRACK_POS; ++j) {
         for (int i = 0; i < SLIDING_RAIL_AMOUNT + TRACK_AMOUNT; ++i) {
             graph[i][j].print(false);
         }
@@ -916,15 +807,21 @@ int main() {
                 printf("\n\nCurrent input rail: %d\n", currentInputRail);
                 printf("\nPhysical offsets are (%f, %f, %f, %f)\n", inputStatus->m_physicalOffset[0], inputStatus->m_physicalOffset[1], inputStatus->m_physicalOffset[2], inputStatus->m_physicalOffset[3]);
                 printf("\nLogical rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_offset, game->m_railStatusList[1].m_offset, game->m_railStatusList[2].m_offset, game->m_railStatusList[3].m_offset);
+                printf("\nRail bars:\n");
                 for (int i = 0; i < SLIDING_RAIL_AMOUNT; ++i) {
                     std::cout << std::bitset<32>((uint32_t)(game->m_railStatusList[i].m_activeBar) << game->m_railStatusList[i].m_offset) << std::endl;
                 }
-                for (int i = 0; i < MAXIMUM_TRACK_POS; ++i) {
+                printf("\nTrack history:\n");
+                for (int i = 0; i < MAXIMUM_INTERLEAVE_TRACK_POS; ++i) {
                     std::cout << game->m_currentTrackHistory[i] << " ";
                 }
-                std::cout << std::endl;
+                printf("\nCheckpoint:\n");
+                for (int i = 0; i < TRACK_AMOUNT; ++i) {
+                    std::cout << std::bitset<64>(game->m_trackStatusList[i].m_checkpoint) << std::endl;
+                }
 
                 printf("\n\nGame start track is %d, end track is %d, current setting's end track is %d\n", game->m_startTrack, game->m_endTrack, game->m_currentEndTrack);
+                printf("\n\nAchieved checkpoint amount is %d\n", game->m_achievedCheckpoint);
                 printf("\nAdvice rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_adviceCompleteOffset, game->m_railStatusList[1].m_adviceCompleteOffset, game->m_railStatusList[2].m_adviceCompleteOffset, game->m_railStatusList[3].m_adviceCompleteOffset);
 #endif
                 dirtyMutex.lock();
