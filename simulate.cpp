@@ -64,8 +64,8 @@
 
 // Progress bar generation
 #ifdef ONE_SET_CHECKPOINT_GENERATION
-  #define CHECKPOINT_TO_CHECKPOINT_DISTANCE // proposed by vbscript Yu-De
-  // #define CHECKPOINT_TO_ENDTRACK_DISTANCE // proposed by Jia-wei
+  //#define CHECKPOINT_TO_CHECKPOINT_DISTANCE // proposed by vbscript Yu-De
+  #define CHECKPOINT_TO_ENDTRACK_DISTANCE // proposed by Jia-wei
 #endif
 // #ifdef MULTIPLE_SET_CHECKPOINT_GENERATION
 //   #define TO_MAXIMUM_CHECKPOINT_DISTANCE // proposed by Edge
@@ -132,6 +132,7 @@ typedef struct GameStatus {
     float m_progressBar;
 
     // For debug purpose
+    float m_debug;
     int m_currentEndTrack;
     int m_currentTrackHistory[64];
 
@@ -539,10 +540,11 @@ float progressBarUpdate(GameStatus *game) {
         currentTrack += switchToSide;
         globalTrackTestPos++;
     }
-    if (currentAchievedCheckpointPos >= checkpointSpacing * CHECKPOINT_AMOUNT) {
+    if (latestAchievedCheckpoint >= CHECKPOINT_AMOUNT) {
+        // Issue: ProgressBar update
         // Achieved last checkpoint and is seeking for the end point
         // The tri-operator is for detecting if there is no contact with right end track
-        int toEndTrackLength = MAXIMUM_INTERLEAVE_TRACK_POS - globalTrackTestPos <= 0 ? checkpointSpacing : MAXIMUM_INTERLEAVE_TRACK_POS - globalTrackTestPos;
+        int toEndTrackLength = (MAXIMUM_INTERLEAVE_TRACK_POS - globalTrackTestPos) <= 0 ? checkpointSpacing : (MAXIMUM_INTERLEAVE_TRACK_POS - globalTrackTestPos);
         game->m_progressBar = 1.0f - (static_cast<float>(toEndTrackLength) / static_cast<float>(checkpointSpacing));
     } else {
         // Didn't achieve last checkpoint
@@ -554,6 +556,7 @@ float progressBarUpdate(GameStatus *game) {
             game->m_progressBar = 1.0f - (static_cast<float>(toEndTrackLength) / static_cast<float>(checkpointSpacing));
         }
     }
+    game->m_debug = globalTrackTestPos;
   #endif
 #endif
 
@@ -820,9 +823,11 @@ int main() {
                     std::cout << std::bitset<64>(game->m_trackStatusList[i].m_checkpoint) << std::endl;
                 }
 
-                printf("\n\nGame start track is %d, end track is %d, current setting's end track is %d\n", game->m_startTrack, game->m_endTrack, game->m_currentEndTrack);
-                printf("\n\nAchieved checkpoint amount is %d\n", game->m_achievedCheckpoint);
+                printf("\nGame start track is %d, end track is %d, current setting's end track is %d\n", game->m_startTrack, game->m_endTrack, game->m_currentEndTrack);
+                printf("\nAchieved checkpoint amount is %d\n", game->m_achievedCheckpoint);
                 printf("\nAdvice rail offsets are (%d, %d, %d, %d)\n", game->m_railStatusList[0].m_adviceCompleteOffset, game->m_railStatusList[1].m_adviceCompleteOffset, game->m_railStatusList[2].m_adviceCompleteOffset, game->m_railStatusList[3].m_adviceCompleteOffset);
+                printf("\nProgress bar: %f\n", game->m_progressBar);
+                printf("\nDebug: %f\n", game->m_debug);
 #endif
                 dirtyMutex.lock();
                 dirtyFlag = false;
